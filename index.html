@@ -768,6 +768,14 @@
             <div class="toggle-thumb"></div>
           </label>
         </div>
+        <div class="toggle-group">
+          <span class="toggle-label">Sobrecargo</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleSurcharge" onchange="recalc()">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
         <div class="toggle-group" style="margin-left:auto;">
           <span class="toggle-label" id="periodoLabel">Anual</span>
           <label class="toggle">
@@ -852,6 +860,8 @@ const CURRENCY_CONFIG = {
 let discounts = [0, 0, 0, 0];
 let discountMonthly = 0;
 let discountSetup = 0;
+let surchargeMonthly = 0;
+let surchargeSetup = 0;
 let engageType = 'norec';
 let studioMode = 'agent';
 let studioManualEdit = false;
@@ -1550,6 +1560,7 @@ function recalc() {
   const studioQty = studioQtyEl ? parseNum(studioQtyEl.value) : 0;
   const plan = planEl ? planEl.value : '0';
   const showDiscount = document.getElementById('toggleDiscount').checked;
+  const showSurcharge = document.getElementById('toggleSurcharge').checked;
 
   const planInfo = PLAN_DATA[plan] || PLAN_DATA['0'];
   const convMonthly = selectedServices.has('desk') ? calcConvBase(convBase) : 0;
@@ -1672,8 +1683,9 @@ function recalc() {
     h += `<th class="num">${cLabel} Setup</th><th class="num">${cLabel} / mes</th>`;
     if (showFull) h += '<th class="num">Extra %</th><th class="num">P. sobreconsumo</th>';
     if (showDiscount) h += '<th class="num">Dcto</th>';
+    if (showSurcharge) h += '<th class="num">Sobrecargo</th>';
     h += '<th>Período</th>';
-    if (showDiscount) h += `<th class="num">${cLabel} Setup</th><th class="num">${cLabel} / mes</th>`;
+    if (showDiscount || showSurcharge) h += `<th class="num">${cLabel} Setup</th><th class="num">${cLabel} / mes</th>`;
     h += '</tr>';
     return h;
   };
@@ -1682,7 +1694,9 @@ function recalc() {
 
   let colSpan = 3;
   if (showFull) colSpan += 8;
-  if (showDiscount) colSpan += 3;
+  if (showDiscount) colSpan += 1;
+  if (showSurcharge) colSpan += 1;
+  if (showDiscount || showSurcharge) colSpan += 2;
 
   const tbody = document.getElementById('bodyComisionables');
   tbody.innerHTML = '';
@@ -1692,8 +1706,13 @@ function recalc() {
     const isMonthlyLine = line.monthly > 0;
     const isSetupLine = line.setup > 0;
     const d = showDiscount ? (isMonthlyLine ? discountMonthly : (isSetupLine ? discountSetup : 0)) : 0;
-    const finalSetup = line.setup * (1 - (showDiscount ? discountSetup : 0) / 100);
-    const finalMonthly = line.monthly * (1 - (showDiscount ? discountMonthly : 0) / 100);
+    const s = showSurcharge ? (isMonthlyLine ? surchargeMonthly : (isSetupLine ? surchargeSetup : 0)) : 0;
+    const discFactor = 1 - (showDiscount ? (isSetupLine ? discountSetup : 0) : 0) / 100;
+    const surchFactor = 1 + (showSurcharge ? (isSetupLine ? surchargeSetup : 0) : 0) / 100;
+    const discFactorM = 1 - (showDiscount ? discountMonthly : 0) / 100;
+    const surchFactorM = 1 + (showSurcharge ? surchargeMonthly : 0) / 100;
+    const finalSetup = line.setup * discFactor * surchFactor;
+    const finalMonthly = line.monthly * discFactorM * surchFactorM;
     totalSetup += finalSetup;
     totalMonthly += finalMonthly;
 
@@ -1714,13 +1733,19 @@ function recalc() {
       cells += `<td class="num discount-cell"><input class="discount-input" type="text" value="${d}%" data-type="${discType}" onchange="updateDiscount(this)" onfocus="this.select()"></td>`;
     }
 
+    if (showSurcharge) {
+      const surchType = isMonthlyLine ? 'monthly' : (isSetupLine ? 'setup' : 'none');
+      cells += `<td class="num discount-cell"><input class="discount-input" type="text" value="${s}%" data-type="${surchType}" onchange="updateSurcharge(this)" onfocus="this.select()" style="color:var(--accent-orange);"></td>`;
+    }
+
     cells += `<td><span class="period-badge${line.period === 'Trimestral' ? ' trimestral' : ''}">${line.period}</span></td>`;
 
-    if (showDiscount) {
+    if (showDiscount || showSurcharge) {
       let fsd, fmd;
-      if (d > 0) {
-        fsd = line.setup > 0 && finalSetup !== line.setup ? `<span class="original-price">${fmtCurrency(line.setup)}</span><span class="discounted">${fmtCurrency(finalSetup)}</span>` : (finalSetup > 0 ? fmtCurrency(finalSetup) : '');
-        fmd = line.monthly > 0 && finalMonthly !== line.monthly ? `<span class="original-price">${fmtCurrency(line.monthly)}</span><span class="discounted">${fmtCurrency(finalMonthly)}</span>` : (finalMonthly > 0 ? fmtCurrency(finalMonthly) : '');
+      const hasChange = d > 0 || s > 0;
+      if (hasChange) {
+        fsd = line.setup > 0 && finalSetup !== line.setup ? `<span class="original-price">${fmtCurrency(line.setup)}</span><span class="${s > 0 && d === 0 ? '' : 'discounted'}" style="${s > 0 && d === 0 ? 'color:var(--accent-orange);font-weight:600;' : ''}">${fmtCurrency(finalSetup)}</span>` : (finalSetup > 0 ? fmtCurrency(finalSetup) : '');
+        fmd = line.monthly > 0 && finalMonthly !== line.monthly ? `<span class="original-price">${fmtCurrency(line.monthly)}</span><span class="${s > 0 && d === 0 ? '' : 'discounted'}" style="${s > 0 && d === 0 ? 'color:var(--accent-orange);font-weight:600;' : ''}">${fmtCurrency(finalMonthly)}</span>` : (finalMonthly > 0 ? fmtCurrency(finalMonthly) : '');
       } else {
         fsd = finalSetup > 0 ? fmtCurrency(finalSetup) : '';
         fmd = finalMonthly > 0 ? fmtCurrency(finalMonthly) : '';
@@ -1778,8 +1803,9 @@ function recalc() {
         cells += `<td class="num">${line.setup > 0 ? fmtCurrency(line.setup) : ''}</td><td class="num">${line.monthly > 0 ? fmtCurrency(line.monthly) : ''}</td>`;
         if (showFull) cells += `<td class="num">${line.extraPct}</td><td class="num">—</td>`;
         if (showDiscount) cells += `<td class="num" style="color:var(--text-muted)">—</td>`;
+        if (showSurcharge) cells += `<td class="num" style="color:var(--text-muted)">—</td>`;
         cells += `<td><span class="period-badge${line.period === 'Trimestral' ? ' trimestral' : ''}">${line.period}</span></td>`;
-        if (showDiscount) cells += `<td class="num">${line.setup > 0 ? fmtCurrency(line.setup) : ''}</td><td class="num">${line.monthly > 0 ? fmtCurrency(line.monthly) : ''}</td>`;
+        if (showDiscount || showSurcharge) cells += `<td class="num">${line.setup > 0 ? fmtCurrency(line.setup) : ''}</td><td class="num">${line.monthly > 0 ? fmtCurrency(line.monthly) : ''}</td>`;
         tr.innerHTML = cells;
         ncBody.appendChild(tr);
       });
@@ -1843,6 +1869,15 @@ function updateDiscount(el) {
   recalc();
 }
 
+function updateSurcharge(el) {
+  const val = Math.max(0, Math.min(500, parseInt(el.value.replace('%', '')) || 0));
+  const type = el.dataset.type;
+  if (type === 'monthly') surchargeMonthly = val;
+  else if (type === 'setup') surchargeSetup = val;
+  el.value = val + '%';
+  recalc();
+}
+
 function resetForm() {
   const convBaseEl = document.getElementById('convBase');
   const studioQtyEl = document.getElementById('studioQty');
@@ -1879,6 +1914,8 @@ function resetForm() {
 
   discountMonthly = 0;
   discountSetup = 0;
+  surchargeMonthly = 0;
+  surchargeSetup = 0;
   studioManualEdit = false;
   studioMode = 'agent';
   engageType = 'norec';
@@ -1906,13 +1943,13 @@ function saveToLocalStorage() {
   const state = {
     selectedServices: [...selectedServices],
     currentCurrency, studioMode, engageType, globalPeriodo,
-    discountMonthly, discountSetup,
+    discountMonthly, discountSetup, surchargeMonthly, surchargeSetup,
     inputs: {}
   };
   ['convBase','studioQty','planSelect','twitterToggle','twitterBolsa',
    'cassperConv','cassperPlan','cassperRecovery',
    'engagePais','engageMarkup','engageMarketing','engageUtility','engageAuth','engageCallMins','engageBolsa',
-   'toggleFull','toggleDiscount','togglePeriodo','extrasSimToggle','extrasSimQty'
+   'toggleFull','toggleDiscount','toggleSurcharge','togglePeriodo','extrasSimToggle','extrasSimQty'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) state.inputs[id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -1937,6 +1974,8 @@ function loadFromLocalStorage() {
     if (state.globalPeriodo) globalPeriodo = state.globalPeriodo;
     if (state.discountMonthly) discountMonthly = state.discountMonthly;
     if (state.discountSetup) discountSetup = state.discountSetup;
+    if (state.surchargeMonthly) surchargeMonthly = state.surchargeMonthly;
+    if (state.surchargeSetup) surchargeSetup = state.surchargeSetup;
     return true;
   } catch(e) { return false; }
 }
