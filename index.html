@@ -769,7 +769,7 @@
           </label>
         </div>
         <div class="toggle-group">
-          <span class="toggle-label">Sobrecargo</span>
+          <span class="toggle-label">Recargo</span>
           <label class="toggle">
             <input type="checkbox" id="toggleSurcharge" onchange="recalc()">
             <div class="toggle-track"></div>
@@ -1683,7 +1683,7 @@ function recalc() {
     h += `<th class="num">${cLabel} Setup</th><th class="num">${cLabel} / mes</th>`;
     if (showFull) h += '<th class="num">Extra %</th><th class="num">P. sobreconsumo</th>';
     if (showDiscount) h += '<th class="num">Dcto</th>';
-    if (showSurcharge) h += '<th class="num">Sobrecargo</th>';
+    if (showSurcharge) h += '<th class="num">Recargo</th>';
     h += '<th>Período</th>';
     if (showDiscount || showSurcharge) h += `<th class="num">${cLabel} Setup</th><th class="num">${cLabel} / mes</th>`;
     h += '</tr>';
