@@ -864,6 +864,7 @@ let surchargeMonthly = 0;
 let surchargeSetup = 0;
 let engageType = 'norec';
 let studioMode = 'agent';
+let deskMode = 'conv';
 let studioManualEdit = false;
 let simScope = 'both';
 let globalPeriodo = 'Anual';
@@ -1000,10 +1001,29 @@ function buildSidebar() {
       <div class="module-group-title">💬 Desk</div>
       <div class="sidebar-section">
         <div class="field-group">
-        <div class="field-label">Conversaciones Base <span class="hint">(mín. 2.000)</span></div>
-        <input type="text" class="field-input" id="convBase" value="2.000" oninput="syncDeskToStudio()">
-        <div class="tier-info" id="deskTierInfo"></div>
-      </div>
+          <div class="field-label">Modelo de cobro</div>
+          <div class="currency-selector" style="width:100%; margin-bottom:0;">
+            <button class="currency-btn active" data-deskmode="conv" onclick="setDeskMode('conv')" style="flex:1; justify-content:center;">💬 Conversaciones</button>
+            <button class="currency-btn" data-deskmode="lic" onclick="setDeskMode('lic')" style="flex:1; justify-content:center;">🪪 Licencias</button>
+          </div>
+        </div>
+        <div id="deskConvGroup">
+          <div class="field-group">
+            <div class="field-label">Conversaciones Base <span class="hint">(mín. 2.000)</span></div>
+            <input type="text" class="field-input" id="convBase" value="2.000" oninput="syncDeskToStudio()">
+            <div class="tier-info" id="deskTierInfo"></div>
+          </div>
+        </div>
+        <div id="deskLicGroup" style="display:none;">
+          <div class="field-group">
+            <div class="field-label">Cantidad de licencias</div>
+            <input type="text" class="field-input" id="deskLicQty" value="1" oninput="recalc()">
+          </div>
+          <div class="field-group">
+            <div class="field-label">Precio por licencia <span class="hint">(USD/mes)</span></div>
+            <input type="text" class="field-input" id="deskLicPrice" value="50" oninput="recalc()">
+          </div>
+        </div>
       <div class="addon-row">
         <div class="addon-label"><span class="addon-icon">#</span> Twitter / X</div>
         <label class="toggle">
@@ -1371,9 +1391,19 @@ function updateConsolidatedSim() {
   result.innerHTML = html;
 }
 
+// ── Desk ──
+function setDeskMode(mode) {
+  deskMode = mode;
+  document.querySelectorAll('[data-deskmode]').forEach(btn => btn.classList.toggle('active', btn.dataset.deskmode === mode));
+  const convGroup = document.getElementById('deskConvGroup');
+  const licGroup = document.getElementById('deskLicGroup');
+  if (convGroup) convGroup.style.display = mode === 'conv' ? '' : 'none';
+  if (licGroup) licGroup.style.display = mode === 'lic' ? '' : 'none';
+  recalc();
+}
+
 // ── Studio ──
-function setStudioMode(mode) {
-  studioMode = mode;
+function setStudioMode(mode) {  studioMode = mode;
   document.querySelectorAll('[data-studio]').forEach(btn => btn.classList.toggle('active', btn.dataset.studio === mode));
   const label = document.getElementById('studioQtyLabel');
   if (label) label.textContent = mode === 'agent' ? '🤖 Agents (Bots con IA)' : '🔄 Flows (Automatizaciones)';
@@ -1568,8 +1598,17 @@ function recalc() {
 
   const lines = [];
   if (selectedServices.has('desk')) {
-    const dti = calcTiered(convBase, DESK_TIERS, 2000, false);
-    lines.push({ name: 'Conversaciones Base: Helpdesk para agentes ilimitados.', unitValue: convMonthly, qty: 1, setup: 0, monthly: convMonthly, period: globalPeriodo, svcLine: 'Adereso Desk', family: 'Conversaciones', sku: '110101001', kind: 'Recurrente', unit: 'Plan', extraPct: '15%', pSobreconsumo: dti.tier.extraRate * 1.15 });
+    if (deskMode === 'lic') {
+      const licQtyEl = document.getElementById('deskLicQty');
+      const licPriceEl = document.getElementById('deskLicPrice');
+      const licQty = licQtyEl ? parseNum(licQtyEl.value) : 0;
+      const licPrice = licPriceEl ? (parseFloat(licPriceEl.value.replace(/\./g,'').replace(/,/g,'.')) || 0) : 0;
+      const licTotal = +(licQty * licPrice * periodoMultiplier()).toFixed(2);
+      if (licQty > 0) lines.push({ name: 'Adereso Desk: Licencias', unitValue: +(licPrice * periodoMultiplier()).toFixed(2), qty: licQty, setup: 0, monthly: licTotal, period: globalPeriodo, svcLine: 'Adereso Desk', family: 'Licencias', sku: '110301001', kind: 'Recurrente', unit: 'Licencia', extraPct: '—', pSobreconsumo: 0 });
+    } else {
+      const dti = calcTiered(convBase, DESK_TIERS, 2000, false);
+      lines.push({ name: 'Conversaciones Base: Helpdesk para agentes ilimitados.', unitValue: convMonthly, qty: 1, setup: 0, monthly: convMonthly, period: globalPeriodo, svcLine: 'Adereso Desk', family: 'Conversaciones', sku: '110101001', kind: 'Recurrente', unit: 'Plan', extraPct: '15%', pSobreconsumo: dti.tier.extraRate * 1.15 });
+    }
     const twToggle = document.getElementById('twitterToggle');
     const twBolsa = document.getElementById('twitterBolsa');
     if (twToggle && twToggle.checked && twBolsa) {
@@ -1845,7 +1884,7 @@ function recalc() {
   lastMetaVal = (selectedServices.has('engage') && bolsaForMeta) ? parseFloat(bolsaForMeta.value.replace(/[^0-9.,]/g, '').replace(/,/g, '')) || 0 : 0;
 
   const deskTier = document.getElementById('deskTierInfo');
-  if (deskTier && convBase > 0) {
+  if (deskTier && convBase > 0 && deskMode === 'conv') {
     const di = calcTiered(convBase, DESK_TIERS, 2000, false);
     const extra = +(di.tier.extraRate * 1.15).toFixed(4);
     deskTier.innerHTML = `<span class="tier-info-extra">Ticket extra: $${extra.toFixed(4)}</span>`;
@@ -1918,6 +1957,7 @@ function resetForm() {
   surchargeSetup = 0;
   studioManualEdit = false;
   studioMode = 'agent';
+  deskMode = 'conv';
   engageType = 'norec';
 
   if (selectedServices.has('engage')) calcEngageBolsa();
@@ -1942,11 +1982,11 @@ const LS_SCENARIOS_KEY = 'adereso-scenarios-v1';
 function saveToLocalStorage() {
   const state = {
     selectedServices: [...selectedServices],
-    currentCurrency, studioMode, engageType, globalPeriodo,
+    currentCurrency, studioMode, deskMode, engageType, globalPeriodo,
     discountMonthly, discountSetup, surchargeMonthly, surchargeSetup,
     inputs: {}
   };
-  ['convBase','studioQty','planSelect','twitterToggle','twitterBolsa',
+  ['convBase','studioQty','planSelect','twitterToggle','twitterBolsa','deskLicQty','deskLicPrice',
    'cassperConv','cassperPlan','cassperRecovery',
    'engagePais','engageMarkup','engageMarketing','engageUtility','engageAuth','engageCallMins','engageBolsa',
    'toggleFull','toggleDiscount','toggleSurcharge','togglePeriodo','extrasSimToggle','extrasSimQty'
@@ -1970,6 +2010,7 @@ function loadFromLocalStorage() {
     }
     if (state.currentCurrency) { currentCurrency = state.currentCurrency; setCurrency(currentCurrency); }
     if (state.studioMode) studioMode = state.studioMode;
+    if (state.deskMode) deskMode = state.deskMode;
     if (state.engageType) engageType = state.engageType;
     if (state.globalPeriodo) globalPeriodo = state.globalPeriodo;
     if (state.discountMonthly) discountMonthly = state.discountMonthly;
@@ -1997,6 +2038,9 @@ function restoreInputs() {
       document.getElementById('periodoLabel').style.color = state.inputs.togglePeriodo ? 'var(--text-muted)' : '';
       document.getElementById('periodoLabelAlt').style.color = state.inputs.togglePeriodo ? '' : 'var(--text-muted)';
     }
+    if (deskMode === 'lic') setDeskMode('lic');
+    if (studioMode === 'flows') setStudioMode('flows');
+    if (engageType === 'rec') setEngageType('rec');
   } catch(e) {}
 }
 
