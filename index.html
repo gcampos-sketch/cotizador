@@ -667,10 +667,6 @@
             <div class="mant-field-label">Recargo créditos excedentes (%)</div>
             <input type="text" class="mant-input" id="mantCassperExcess" value="20" onchange="saveMantConfig()">
           </div>
-          <div class="mant-field">
-            <div class="mant-field-label">Créditos por conversación</div>
-            <input type="text" class="mant-input" id="mantCassperCredPerConv" value="4" onchange="saveMantConfig()">
-          </div>
         </div>
         <div class="mant-section">
           <div class="mant-section-title">💱 Conversión</div>
@@ -679,8 +675,16 @@
             <input type="text" class="mant-input" id="mantUFRate" value="45.41" onchange="saveMantConfig()">
           </div>
           <div class="mant-field">
-            <div class="mant-field-label">Tipo de cambio crédito (USD)</div>
-            <input type="text" class="mant-input" id="mantCreditRate" value="0.1" onchange="saveMantConfig()">
+            <div class="mant-field-label">Tipo de cambio crédito (USD/CR)</div>
+            <input type="text" class="mant-input" id="mantCreditRate" value="0.0837" onchange="saveMantConfig()">
+          </div>
+          <div class="mant-field">
+            <div class="mant-field-label">Tokens promedio por conversación</div>
+            <input type="text" class="mant-input" id="mantTokensPerConv" value="30000" onchange="saveMantConfig()">
+          </div>
+          <div class="mant-field">
+            <div class="mant-field-label">Markup factor tokens→CR</div>
+            <input type="text" class="mant-input" id="mantMarkupFactor" value="7.10" onchange="saveMantConfig()">
           </div>
         </div>
       </div>
@@ -776,15 +780,23 @@
             <div class="toggle-thumb"></div>
           </label>
         </div>
-        <div class="toggle-group" style="margin-left:auto;">
-          <span class="toggle-label" id="periodoLabel">Anual</span>
-          <label class="toggle">
-            <input type="checkbox" id="togglePeriodo" onchange="togglePeriodo()">
-            <div class="toggle-track"></div>
-            <div class="toggle-thumb"></div>
-          </label>
-          <span class="toggle-label" id="periodoLabelAlt" style="color:var(--text-muted)">Trimestral</span>
-        </div>
+      </div>
+
+      <div id="compromisoPanel" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; font-size:13px; color:var(--text-secondary);">
+        <span style="font-weight:600; color:var(--text-primary);">Compromiso</span>
+        <select class="field-select" id="selectPlazo" onchange="setPlazo(this.value)" style="width:auto; padding:6px 30px 6px 10px; font-size:13px;">
+          <option value="1">Contrato 1 año</option>
+          <option value="2">Contrato 2 años</option>
+          <option value="3">Contrato 3 años</option>
+          <option value="4">Contrato 4 años</option>
+        </select>
+        <select class="field-select" id="selectAnticipo" onchange="setAnticipo(this.value)" style="width:auto; padding:6px 30px 6px 10px; font-size:13px;">
+          <option value="0">Sin anticipo</option>
+          <option value="1">1 año anticipado</option>
+          <option value="2">2 años anticipados</option>
+          <option value="3">3 años anticipados</option>
+        </select>
+        <span id="compromisoInfo"></span>
       </div>
 
       <div class="table-section">
@@ -855,16 +867,50 @@ const PLAN_DATA = {
 const CURRENCY_CONFIG = {
   USD: { prefix: '$', suffix: '', decimals: 2, label: 'USD', convert: v => v },
   UF: { prefix: '', suffix: ' UF', decimals: 2, label: 'UF', convert: v => v / getMant('mantUFRate', 45.41) },
-  CR: { prefix: '', suffix: ' cr', decimals: 0, label: 'Créditos', convert: v => v / getMant('mantCreditRate', 0.1) }
+  CR: { prefix: '', suffix: ' cr', decimals: 0, label: 'Créditos', convert: v => v / getMant('mantCreditRate', 0.0837) }
 };
 let discounts = [0, 0, 0, 0];
 let discountMonthly = 0;
 let discountSetup = 0;
 let surchargeMonthly = 0;
 let surchargeSetup = 0;
+// Matriz de descuento por compromiso [plazo contrato][pago anticipado]
+// Filas: plazo 1/2/3/4 años · Columnas: sin anticipo, 1/2/3 años anticipados
+const COMPROMISO_MATRIX = {
+  '1': { '0': 0.00, '1': 5.90, '2': 6.57, '3': 7.22 },
+  '2': { '0': 3.77, '1': 9.68, '2': 10.34, '3': 10.99 },
+  '3': { '0': 7.21, '1': 13.11, '2': 13.77, '3': 14.42 },
+  '4': { '0': 8.91, '1': 14.82, '2': 15.48, '3': 16.13 }
+};
+let compromisoPlazo = '1';
+let compromisoAnticipo = '0';
 let engageType = 'norec';
 let studioMode = 'agent';
+let studioPricing = 'tiers';
 let deskMode = 'conv';
+
+const STUDIO_LAUNCH_PLANS = {
+  launch: { traffic: 500 },
+  growth: { traffic: 1000 },
+  scale: { traffic: 1500 }
+};
+
+// CR consumidos por 1M tokens (markup 7.10×, $0.0837/CR) — del doc técnico
+const AI_MODELS = {
+  gpt4omini: { label: 'GPT-4o mini', crPerM: 30 },
+  gpt41mini: { label: 'GPT-4.1 mini', crPerM: 50 },
+  haiku: { label: 'Claude 3 Haiku', crPerM: 80 },
+  gpt41: { label: 'GPT-4.1', crPerM: 340 },
+  gpt4o: { label: 'GPT-4o', crPerM: 640 },
+  sonnet: { label: 'Claude 3.5 Sonnet', crPerM: 760 }
+};
+
+function crPerConversation(modelKey) {
+  const m = AI_MODELS[modelKey] || AI_MODELS.gpt4omini;
+  const tokensPerConv = getMant('mantTokensPerConv', 30000);
+  const cr = Math.round(m.crPerM * (tokensPerConv / 1000000) / 10) * 10;
+  return Math.max(cr, 10);
+}
 let studioManualEdit = false;
 let simScope = 'both';
 let globalPeriodo = 'Anual';
@@ -1050,29 +1096,74 @@ function buildSidebar() {
       ${studioSolo ? '<div class="studio-solo-warning">⚠️ Sin Desk: recargo +' + getMant('mantStudioSolo', 35) + '% aplicado</div>' : ''}
       <div class="sidebar-section">
         <div class="field-group">
-        <div class="field-label">Versión</div>
-        <div class="currency-selector" style="width:100%; margin-bottom:0;">
-          <button class="currency-btn" data-studio="flows" onclick="setStudioMode('flows')" style="flex:1; justify-content:center;">🔄 Flows</button>
-          <button class="currency-btn active" data-studio="agent" onclick="setStudioMode('agent')" style="flex:1; justify-content:center;">🤖 Agent</button>
+          <div class="field-label">Modalidad de pricing</div>
+          <div class="currency-selector" style="width:100%; margin-bottom:0;">
+            <button class="currency-btn active" data-studiopricing="tiers" onclick="setStudioPricing('tiers')" style="flex:1; justify-content:center;">Por volumen</button>
+            <button class="currency-btn" data-studiopricing="planes" onclick="setStudioPricing('planes')" style="flex:1; justify-content:center;">Planes Launch</button>
+          </div>
+        </div>
+        <div id="studioTiersGroup">
+          <div class="field-group">
+            <div class="field-label">Versión</div>
+            <div class="currency-selector" style="width:100%; margin-bottom:0;">
+              <button class="currency-btn" data-studio="flows" onclick="setStudioMode('flows')" style="flex:1; justify-content:center;">🔄 Flows</button>
+              <button class="currency-btn active" data-studio="agent" onclick="setStudioMode('agent')" style="flex:1; justify-content:center;">🤖 Agent</button>
+            </div>
+          </div>
+          <div class="field-group">
+            <div class="field-label" id="studioQtyLabel">🤖 Agents (Bots con IA)</div>
+            <input type="text" class="field-input" id="studioQty" value="2.000" oninput="onStudioEdit()">
+            <div class="tier-info" id="studioTierInfo"></div>
+          </div>
+          <div class="field-group" style="border-top:1px solid var(--border); padding-top:12px; margin-top:12px;">
+            <div class="field-label">📋 Plan Setup Bot</div>
+            <select class="field-select" id="planSelect" onchange="recalc()">
+              <option value="0">— Plan 0</option>
+              <option value="1">Plan 1</option>
+              <option value="2" selected>Plan 2</option>
+              <option value="3">Plan 3</option>
+              <option value="4">Plan 4</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+        <div id="studioPlanesGroup" style="display:none;">
+          <div class="field-group">
+            <div class="field-label">Plan de tráfico <span class="hint">(setup $0)</span></div>
+            <select class="field-select" id="studioPlanLaunch" onchange="recalc()">
+              <option value="launch">Studio Launch — USD 500/mes</option>
+              <option value="growth">Studio Growth — USD 1.000/mes</option>
+              <option value="scale">Studio Scale — USD 1.500/mes</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <div class="field-label">🧠 Modelo IA</div>
+            <select class="field-select" id="studioModelIA" onchange="recalc()">
+              <option value="gpt4omini" selected>GPT-4o mini</option>
+              <option value="gpt41mini">GPT-4.1 mini</option>
+              <option value="haiku">Claude 3 Haiku</option>
+              <option value="gpt41">GPT-4.1</option>
+              <option value="gpt4o">GPT-4o</option>
+              <option value="sonnet">Claude 3.5 Sonnet</option>
+            </select>
+            <div class="tier-info" id="studioPlanInfo"></div>
+          </div>
+          <div class="addon-row">
+            <div class="addon-label"><span class="addon-icon">👥</span> Studio Managed</div>
+            <label class="toggle">
+              <input type="checkbox" id="studioManagedToggle" onchange="toggleStudioManaged()">
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+          <div class="addon-expand" id="studioManagedExpand">
+            <div class="field-group">
+              <div class="field-label">Studio Managed <span class="hint">(USD/mes, desde 3.000)</span></div>
+              <input type="text" class="field-input" id="studioManagedPrice" value="3.000" oninput="recalc()">
+            </div>
+          </div>
         </div>
       </div>
-      <div class="field-group">
-        <div class="field-label" id="studioQtyLabel">🤖 Agents (Bots con IA)</div>
-        <input type="text" class="field-input" id="studioQty" value="2.000" oninput="onStudioEdit()">
-        <div class="tier-info" id="studioTierInfo"></div>
-      </div>
-      <div class="field-group" style="border-top:1px solid var(--border); padding-top:12px; margin-top:12px;">
-        <div class="field-label">📋 Plan Setup Bot</div>
-        <select class="field-select" id="planSelect" onchange="recalc()">
-          <option value="0">— Plan 0</option>
-          <option value="1">Plan 1</option>
-          <option value="2" selected>Plan 2</option>
-          <option value="3">Plan 3</option>
-          <option value="4">Plan 4</option>
-          <option value="custom">Custom</option>
-        </select>
-      </div>
-    </div>
     </div>`;
   }
 
@@ -1115,6 +1206,17 @@ function buildSidebar() {
           <div class="field-label">Conversaciones de venta <span class="hint">(intención)</span></div>
           <input type="text" class="field-input" id="cassperConv" value="600" oninput="autoCassperPlan()">
           <div class="tier-info" id="cassperCredits"></div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">🧠 Modelo IA</div>
+          <select class="field-select" id="cassperModelIA" onchange="autoCassperPlan()">
+            <option value="gpt4omini" selected>GPT-4o mini</option>
+            <option value="gpt41mini">GPT-4.1 mini</option>
+            <option value="haiku">Claude 3 Haiku</option>
+            <option value="gpt41">GPT-4.1</option>
+            <option value="gpt4o">GPT-4o</option>
+            <option value="sonnet">Claude 3.5 Sonnet</option>
+          </select>
         </div>
         <div class="field-group">
           <div class="field-label">Plan sugerido <span class="hint">(editable)</span></div>
@@ -1270,19 +1372,12 @@ function autoCassperPlan() {
   const planEl = document.getElementById('cassperPlan');
   if (!convEl || !planEl) return;
   const conv = parseNum(convEl.value);
-  const credPerConv = getMant('mantCassperCredPerConv', 4);
+  const cassperModelEl = document.getElementById('cassperModelIA');
+  const credPerConv = crPerConversation(cassperModelEl ? cassperModelEl.value : 'gpt4omini');
   const credits = conv * credPerConv;
   if (credits <= 2300) planEl.value = 'starter';
   else if (credits <= 4800) planEl.value = 'growth';
   else planEl.value = 'scale';
-  recalc();
-}
-
-function togglePeriodo() {
-  const checked = document.getElementById('togglePeriodo').checked;
-  globalPeriodo = checked ? 'Trimestral' : 'Anual';
-  document.getElementById('periodoLabel').style.color = checked ? 'var(--text-muted)' : '';
-  document.getElementById('periodoLabelAlt').style.color = checked ? '' : 'var(--text-muted)';
   recalc();
 }
 
@@ -1402,7 +1497,50 @@ function setDeskMode(mode) {
   recalc();
 }
 
+// ── Compromiso (matriz de descuento) ──
+function setPlazo(v) {
+  compromisoPlazo = String(v);
+  const sel = document.getElementById('selectPlazo');
+  if (sel) sel.value = compromisoPlazo;
+  recalc();
+}
+function setAnticipo(v) {
+  compromisoAnticipo = String(v);
+  const sel = document.getElementById('selectAnticipo');
+  if (sel) sel.value = compromisoAnticipo;
+  recalc();
+}
+function updateCompromisoInfo() {
+  const info = document.getElementById('compromisoInfo');
+  if (!info) return;
+  const pct = COMPROMISO_MATRIX[compromisoPlazo]?.[compromisoAnticipo] || 0;
+  if (pct > 0) {
+    info.innerHTML = `<span style="background:rgba(34,197,94,0.15); color:var(--accent-green); font-weight:700; padding:3px 10px; border-radius:20px;">−${pct.toLocaleString('es-CL')}% recurrente</span>`;
+  } else {
+    info.innerHTML = '';
+  }
+}
+
 // ── Studio ──
+function setStudioPricing(mode) {
+  studioPricing = mode;
+  document.querySelectorAll('[data-studiopricing]').forEach(btn => btn.classList.toggle('active', btn.dataset.studiopricing === mode));
+  const tiersGroup = document.getElementById('studioTiersGroup');
+  const planesGroup = document.getElementById('studioPlanesGroup');
+  if (tiersGroup) tiersGroup.style.display = mode === 'tiers' ? '' : 'none';
+  if (planesGroup) planesGroup.style.display = mode === 'planes' ? '' : 'none';
+  recalc();
+}
+
+function toggleStudioManaged() {
+  const expand = document.getElementById('studioManagedExpand');
+  const toggle = document.getElementById('studioManagedToggle');
+  if (expand && toggle) {
+    expand.classList.toggle('open', toggle.checked);
+  }
+  recalc();
+}
+
 function setStudioMode(mode) {  studioMode = mode;
   document.querySelectorAll('[data-studio]').forEach(btn => btn.classList.toggle('active', btn.dataset.studio === mode));
   const label = document.getElementById('studioQtyLabel');
@@ -1591,6 +1729,8 @@ function recalc() {
   const plan = planEl ? planEl.value : '0';
   const showDiscount = document.getElementById('toggleDiscount').checked;
   const showSurcharge = document.getElementById('toggleSurcharge').checked;
+  const compromisoPct = COMPROMISO_MATRIX[compromisoPlazo]?.[compromisoAnticipo] || 0;
+  updateCompromisoInfo();
 
   const planInfo = PLAN_DATA[plan] || PLAN_DATA['0'];
   const convMonthly = selectedServices.has('desk') ? calcConvBase(convBase) : 0;
@@ -1617,19 +1757,34 @@ function recalc() {
     }
   }
   if (selectedServices.has('studio')) {
-    const studioLabel = studioMode === 'agent' ? 'Addon Automatización: Agent Automation' : 'Addon Automatización: Flows';
-    const stTiers = studioMode === 'agent' ? STUDIO_AGENT_TIERS : STUDIO_FLOWS_TIERS;
-    const sti = calcTiered(studioQty, stTiers, 2000, false);
-    const planEl2 = document.getElementById('planSelect');
-    const plan2 = planEl2 ? planEl2.value : '2';
-    const planInfo2 = PLAN_DATA[plan2] || PLAN_DATA['2'];
-    const studioMonthlyTotal = +(autoMonthly + planInfo2.soporte).toFixed(2);
-    lines.push({ name: studioLabel, unitValue: studioMonthlyTotal, qty: 1, setup: 0, monthly: studioMonthlyTotal, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Automatización', sku: studioMode === 'agent' ? '120101001' : '120102001', kind: 'Recurrente', unit: 'Plan', extraPct: '15%', pSobreconsumo: sti.tier.extraRate * 1.15, expandable: true, subRows: [
-      { label: studioLabel, value: autoMonthly },
-      { label: 'Mantención bot', value: planInfo2.soporte }
-    ]});
-    if (planInfo2.setup > 0) {
-      lines.push({ name: `Adereso Studio, Setup: Plan ${plan2 === 'custom' ? 'Custom' : plan2}`, unitValue: planInfo2.setup, qty: 1, setup: planInfo2.setup, monthly: 0, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Setup', sku: '120201001', kind: 'Eventual', unit: 'Plan', extraPct: '—', pSobreconsumo: 0 });
+    if (studioPricing === 'planes') {
+      const planLaunchEl = document.getElementById('studioPlanLaunch');
+      const planKey = planLaunchEl ? planLaunchEl.value : 'launch';
+      const traffic = (STUDIO_LAUNCH_PLANS[planKey] || STUDIO_LAUNCH_PLANS.launch).traffic;
+      const planName = planKey.charAt(0).toUpperCase() + planKey.slice(1);
+      const trafficTotal = +(traffic * periodoMultiplier() * studioSoloMultiplier()).toFixed(2);
+      lines.push({ name: `Studio ${planName}: tráfico incluido`, unitValue: trafficTotal, qty: 1, setup: 0, monthly: trafficTotal, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Tráfico', sku: '120401001', kind: 'Recurrente', unit: 'Plan', extraPct: '—', pSobreconsumo: 0 });
+      const managedToggle = document.getElementById('studioManagedToggle');
+      const managedPriceEl = document.getElementById('studioManagedPrice');
+      if (managedToggle && managedToggle.checked && managedPriceEl) {
+        const managedPrice = parseFloat(managedPriceEl.value.replace(/\./g,'').replace(/,/g,'.')) || 0;
+        if (managedPrice > 0) lines.push({ name: 'Studio Managed: servicios profesionales (30 hrs)', unitValue: managedPrice, qty: 1, setup: 0, monthly: managedPrice, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Managed', sku: '120501001', kind: 'Recurrente', unit: 'Plan', extraPct: '—', pSobreconsumo: 0 });
+      }
+    } else {
+      const studioLabel = studioMode === 'agent' ? 'Addon Automatización: Agent Automation' : 'Addon Automatización: Flows';
+      const stTiers = studioMode === 'agent' ? STUDIO_AGENT_TIERS : STUDIO_FLOWS_TIERS;
+      const sti = calcTiered(studioQty, stTiers, 2000, false);
+      const planEl2 = document.getElementById('planSelect');
+      const plan2 = planEl2 ? planEl2.value : '2';
+      const planInfo2 = PLAN_DATA[plan2] || PLAN_DATA['2'];
+      const studioMonthlyTotal = +(autoMonthly + planInfo2.soporte).toFixed(2);
+      lines.push({ name: studioLabel, unitValue: studioMonthlyTotal, qty: 1, setup: 0, monthly: studioMonthlyTotal, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Automatización', sku: studioMode === 'agent' ? '120101001' : '120102001', kind: 'Recurrente', unit: 'Plan', extraPct: '15%', pSobreconsumo: sti.tier.extraRate * 1.15, expandable: true, subRows: [
+        { label: studioLabel, value: autoMonthly },
+        { label: 'Mantención bot', value: planInfo2.soporte }
+      ]});
+      if (planInfo2.setup > 0) {
+        lines.push({ name: `Adereso Studio, Setup: Plan ${plan2 === 'custom' ? 'Custom' : plan2}`, unitValue: planInfo2.setup, qty: 1, setup: planInfo2.setup, monthly: 0, period: globalPeriodo, svcLine: 'Adereso Studio', family: 'Setup', sku: '120201001', kind: 'Eventual', unit: 'Plan', extraPct: '—', pSobreconsumo: 0 });
+      }
     }
   }
   if (selectedServices.has('cassper')) {
@@ -1646,7 +1801,9 @@ function recalc() {
       scale: { price: 1000, credits: 10000, convApprox: 2500, recoveryIncluded: 10000 }
     };
     const cp = CASSPER_PLANS[cPlan];
-    const credPerConv = getMant('mantCassperCredPerConv', 4);
+    const cassperModelEl = document.getElementById('cassperModelIA');
+    const cassperModel = cassperModelEl ? cassperModelEl.value : 'gpt4omini';
+    const credPerConv = crPerConversation(cassperModel);
     const creditsUsed = cConv * credPerConv;
     const creditsExcess = Math.max(creditsUsed - cp.credits, 0);
     const pricePerCredit = cp.price / cp.credits;
@@ -1748,7 +1905,7 @@ function recalc() {
     const s = showSurcharge ? (isMonthlyLine ? surchargeMonthly : (isSetupLine ? surchargeSetup : 0)) : 0;
     const discFactor = 1 - (showDiscount ? (isSetupLine ? discountSetup : 0) : 0) / 100;
     const surchFactor = 1 + (showSurcharge ? (isSetupLine ? surchargeSetup : 0) : 0) / 100;
-    const discFactorM = 1 - (showDiscount ? discountMonthly : 0) / 100;
+    const discFactorM = 1 - ((showDiscount ? discountMonthly : 0) + compromisoPct) / 100;
     const surchFactorM = 1 + (showSurcharge ? surchargeMonthly : 0) / 100;
     const finalSetup = line.setup * discFactor * surchFactor;
     const finalMonthly = line.monthly * discFactorM * surchFactorM;
@@ -1769,7 +1926,8 @@ function recalc() {
 
     if (showDiscount) {
       const discType = isMonthlyLine ? 'monthly' : (isSetupLine ? 'setup' : 'none');
-      cells += `<td class="num discount-cell"><input class="discount-input" type="text" value="${d}%" data-type="${discType}" onchange="updateDiscount(this)" onfocus="this.select()"></td>`;
+      const compExtra = (isMonthlyLine && compromisoPct > 0) ? ` <span style="color:var(--accent-green);font-size:11px;">+${compromisoPct.toLocaleString('es-CL')}%</span>` : '';
+      cells += `<td class="num discount-cell"><input class="discount-input" type="text" value="${d}%" data-type="${discType}" onchange="updateDiscount(this)" onfocus="this.select()">${compExtra}</td>`;
     }
 
     if (showSurcharge) {
@@ -1891,12 +2049,26 @@ function recalc() {
   } else if (deskTier) { deskTier.innerHTML = ''; }
 
   const studioTier = document.getElementById('studioTierInfo');
-  if (studioTier && studioQty > 0) {
+  if (studioTier && studioQty > 0 && studioPricing === 'tiers') {
     const tiers = studioMode === 'agent' ? STUDIO_AGENT_TIERS : STUDIO_FLOWS_TIERS;
     const si = calcTiered(studioQty, tiers, 2000, false);
     const extra = +(si.tier.extraRate * 1.15).toFixed(4);
     studioTier.innerHTML = `<span class="tier-info-extra">Ticket extra: $${extra.toFixed(4)}</span>`;
   } else if (studioTier) { studioTier.innerHTML = ''; }
+
+  const studioPlanInfo = document.getElementById('studioPlanInfo');
+  if (studioPlanInfo && studioPricing === 'planes') {
+    const planLaunchEl = document.getElementById('studioPlanLaunch');
+    const planKey = planLaunchEl ? planLaunchEl.value : 'launch';
+    const traffic = (STUDIO_LAUNCH_PLANS[planKey] || STUDIO_LAUNCH_PLANS.launch).traffic;
+    const modelEl = document.getElementById('studioModelIA');
+    const modelKey = modelEl ? modelEl.value : 'gpt4omini';
+    const credRate = getMant('mantCreditRate', 0.0837);
+    const credits = Math.round(traffic / credRate);
+    const crPerConv = crPerConversation(modelKey);
+    const convs = Math.round(credits / crPerConv);
+    studioPlanInfo.innerHTML = `<span>${credits.toLocaleString('es-CL')} CR · ${crPerConv} CR/conv · ~${convs.toLocaleString('es-CL')} conversaciones</span>`;
+  } else if (studioPlanInfo) { studioPlanInfo.innerHTML = ''; }
 }
 
 function updateDiscount(el) {
@@ -1948,15 +2120,19 @@ function resetForm() {
 
   document.getElementById('toggleDiscount').checked = false;
   document.getElementById('toggleFull').checked = false;
-  const periodoToggle = document.getElementById('togglePeriodo');
-  if (periodoToggle) { periodoToggle.checked = false; globalPeriodo = 'Anual'; }
+  globalPeriodo = 'Anual';
 
   discountMonthly = 0;
   discountSetup = 0;
   surchargeMonthly = 0;
   surchargeSetup = 0;
+  compromisoPlazo = '1';
+  compromisoAnticipo = '0';
+  setPlazo('1');
+  setAnticipo('0');
   studioManualEdit = false;
   studioMode = 'agent';
+  studioPricing = 'tiers';
   deskMode = 'conv';
   engageType = 'norec';
 
@@ -1982,14 +2158,16 @@ const LS_SCENARIOS_KEY = 'adereso-scenarios-v1';
 function saveToLocalStorage() {
   const state = {
     selectedServices: [...selectedServices],
-    currentCurrency, studioMode, deskMode, engageType, globalPeriodo,
+    currentCurrency, studioMode, studioPricing, deskMode, engageType, globalPeriodo,
     discountMonthly, discountSetup, surchargeMonthly, surchargeSetup,
+    compromisoPlazo, compromisoAnticipo,
     inputs: {}
   };
   ['convBase','studioQty','planSelect','twitterToggle','twitterBolsa','deskLicQty','deskLicPrice',
-   'cassperConv','cassperPlan','cassperRecovery',
+   'studioPlanLaunch','studioManagedToggle','studioManagedPrice','studioModelIA',
+   'cassperConv','cassperPlan','cassperRecovery','cassperModelIA',
    'engagePais','engageMarkup','engageMarketing','engageUtility','engageAuth','engageCallMins','engageBolsa',
-   'toggleFull','toggleDiscount','toggleSurcharge','togglePeriodo','extrasSimToggle','extrasSimQty'
+   'toggleFull','toggleDiscount','toggleSurcharge','extrasSimToggle','extrasSimQty'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) state.inputs[id] = el.type === 'checkbox' ? el.checked : el.value;
@@ -2010,13 +2188,16 @@ function loadFromLocalStorage() {
     }
     if (state.currentCurrency) { currentCurrency = state.currentCurrency; setCurrency(currentCurrency); }
     if (state.studioMode) studioMode = state.studioMode;
+    if (state.studioPricing) studioPricing = state.studioPricing;
     if (state.deskMode) deskMode = state.deskMode;
     if (state.engageType) engageType = state.engageType;
-    if (state.globalPeriodo) globalPeriodo = state.globalPeriodo;
+    globalPeriodo = 'Anual';
     if (state.discountMonthly) discountMonthly = state.discountMonthly;
     if (state.discountSetup) discountSetup = state.discountSetup;
     if (state.surchargeMonthly) surchargeMonthly = state.surchargeMonthly;
     if (state.surchargeSetup) surchargeSetup = state.surchargeSetup;
+    if (state.compromisoPlazo) compromisoPlazo = state.compromisoPlazo;
+    if (state.compromisoAnticipo) compromisoAnticipo = state.compromisoAnticipo;
     return true;
   } catch(e) { return false; }
 }
@@ -2034,13 +2215,14 @@ function restoreInputs() {
         else el.value = val;
       }
     });
-    if (state.inputs.togglePeriodo) {
-      document.getElementById('periodoLabel').style.color = state.inputs.togglePeriodo ? 'var(--text-muted)' : '';
-      document.getElementById('periodoLabelAlt').style.color = state.inputs.togglePeriodo ? '' : 'var(--text-muted)';
-    }
     if (deskMode === 'lic') setDeskMode('lic');
+    if (studioPricing === 'planes') setStudioPricing('planes');
     if (studioMode === 'flows') setStudioMode('flows');
     if (engageType === 'rec') setEngageType('rec');
+    setPlazo(compromisoPlazo);
+    setAnticipo(compromisoAnticipo);
+    const managedToggle = document.getElementById('studioManagedToggle');
+    if (managedToggle && managedToggle.checked) toggleStudioManaged();
   } catch(e) {}
 }
 
