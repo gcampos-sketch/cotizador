@@ -522,6 +522,43 @@
   .resumen-actions { display: flex; gap: 12px; justify-content: center; margin-top: 24px; }
   .resumen-copy-feedback { font-size: 12px; color: var(--accent-green); margin-top: 8px; text-align: center; min-height: 18px; }
 
+  .roi-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; backdrop-filter: blur(8px); }
+  .roi-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .roi-title { font-size: 16px; font-weight: 700; color: var(--accent-green); margin-bottom: 4px; }
+  .roi-sub { font-size: 12px; color: var(--text-muted); max-width: 420px; }
+  .roi-body { display: flex; gap: 24px; flex-wrap: wrap; }
+  .roi-inputs { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 12px; }
+  .roi-input-group { display: flex; flex-direction: column; gap: 4px; }
+  .roi-input-label { font-size: 12px; color: var(--text-secondary); }
+  .roi-input-field { width: 100%; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 14px; font-family: inherit; }
+  .roi-input-field:focus { outline: none; border-color: var(--accent-green); }
+  .roi-results { flex: 1; min-width: 260px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+  .roi-result-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .roi-result-card.highlight { border-color: var(--accent-green); background: rgba(34,197,94,0.06); }
+  .roi-result-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .roi-result-value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .roi-result-value.gain { color: var(--text-primary); }
+  .roi-result-value.cost { color: var(--text-secondary); }
+  .roi-result-value.roi { color: var(--accent-green); }
+  .roi-result-value.roi.negative { color: var(--accent-red); }
+  .roi-result-value.net { color: var(--accent-green); }
+  .roi-result-value.net.negative { color: var(--accent-red); }
+  .roi-note { font-size: 12px; color: var(--text-muted); margin-top: 16px; font-style: italic; }
+
+  .roi-cases { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .roi-macro-header { grid-column: 1 / -1; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-yellow); margin-top: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .roi-macro-header:first-child { margin-top: 0; }
+  .roi-case-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; transition: all .15s; }
+  .roi-case-card.active { border-color: var(--accent-green); background: rgba(34,197,94,0.05); }
+  .roi-case-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .roi-case-titlewrap { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .roi-case-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .roi-case-tag { font-size: 11px; color: var(--text-muted); }
+  .roi-case-gain { font-size: 15px; font-weight: 700; color: var(--accent-green); white-space: nowrap; }
+  .roi-case-body { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .roi-case-body.hidden { display: none; }
+  .roi-case-note { font-size: 11px; color: var(--text-muted); font-style: italic; margin-top: 4px; }
+
   .comparador-section { margin-top: 32px; }
   .comparador-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; }
   .comparador-slots { display: flex; gap: 16px; }
@@ -549,6 +586,7 @@
   <div class="home-content">
     <div class="home-tabs">
       <button class="home-tab active" onclick="switchHomeTab('cotizar')">Cotizar</button>
+      <button class="home-tab" onclick="switchHomeTab('roi')">📈 Calculadora ROI</button>
       <button class="home-tab" onclick="switchHomeTab('mantenedor')">⚙️ Mantenedor</button>
     </div>
 
@@ -686,6 +724,54 @@
             <div class="mant-field-label">Markup factor tokens→CR</div>
             <input type="text" class="mant-input" id="mantMarkupFactor" value="7.10" onchange="saveMantConfig()">
           </div>
+          <div class="mant-field">
+            <div class="mant-field-label">ROI · días hábiles / mes</div>
+            <input type="text" class="mant-input" id="mantRoiDiasHabiles" value="22" onchange="recalcRoiIfOpen()">
+          </div>
+          <div class="mant-field">
+            <div class="mant-field-label">ROI · horas / día</div>
+            <input type="text" class="mant-input" id="mantRoiHorasDia" value="8" onchange="recalcRoiIfOpen()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tabRoi" class="home-tab-content">
+      <div class="home-section">
+        <div class="home-section-title">📈 Calculadora de ROI</div>
+        <div class="home-section-sub">Arma el caso de negocio activando uno o varios casos de uso. Las ganancias se suman y se comparan contra el costo Adereso.</div>
+
+        <div class="roi-cases" id="roiCases"></div>
+
+        <div class="roi-section" style="margin-top:20px; margin-bottom:0;">
+          <div class="roi-header">
+            <div>
+              <div class="roi-title">Caso de negocio consolidado</div>
+              <div class="roi-sub">Suma de todas las fuentes de valor activadas vs. el costo mensual de Adereso.</div>
+            </div>
+          </div>
+          <div class="roi-results" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="roi-result-card">
+              <div class="roi-result-label">Ganancia total / mes</div>
+              <div class="roi-result-value gain" id="roiGain">$0</div>
+            </div>
+            <div class="roi-result-card">
+              <div class="roi-result-label">Costo Adereso / mes (USD)</div>
+              <input class="roi-input-field" type="text" id="roiCost" value="0" oninput="calcRoi()" style="text-align:center; font-size:20px; font-weight:700; padding:6px;">
+              <div style="margin-top:6px;"><button onclick="roiUseCotizacion()" style="background:none; border:none; color:var(--accent-blue); font-size:11px; cursor:pointer; text-decoration:underline;">usar total cotizado</button></div>
+            </div>
+            <div class="roi-result-card highlight">
+              <div class="roi-result-label">ROI mensual</div>
+              <div class="roi-result-value roi" id="roiValue">0%</div>
+            </div>
+            <div class="roi-result-card">
+              <div class="roi-result-label">Ganancia neta / mes</div>
+              <div class="roi-result-value net" id="roiNet">$0</div>
+            </div>
+          </div>
+          <div id="roiFeeLine" style="display:none; margin-top:12px; padding:10px 14px; background:var(--bg-input); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-secondary);"></div>
+          <div class="roi-note" id="roiNote">Activa al menos un caso de uso para construir el business case.</div>
+          <div style="margin-top:16px;"><button class="btn btn-primary" onclick="copyRoi()">📋 Copiar caso de negocio</button> <button class="btn btn-green" onclick="downloadRoi()" style="margin-left:8px;">⬇️ Generar caso de negocio (PDF)</button> <span class="resumen-copy-feedback" id="roiCopyFeedback" style="margin-left:10px;"></span></div>
         </div>
       </div>
     </div>
@@ -841,6 +927,7 @@
     </div>
     <div class="resumen-totals" id="resumenTotals"></div>
     <div class="resumen-lines" id="resumenLines"></div>
+
     <div class="resumen-actions">
       <button class="btn btn-ghost" onclick="goToCotizadorFromResumen()">← Editar cotización</button>
       <button class="btn btn-primary" onclick="copyResumen()">📋 Copiar resumen</button>
@@ -953,9 +1040,14 @@ function calcCallCost(pais, minutes) {
 
 // ── Home Tabs ──
 function switchHomeTab(tab) {
-  document.querySelectorAll('.home-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(tab)));
+  document.querySelectorAll('.home-tab').forEach(t => t.classList.remove('active'));
+  const btnMap = { cotizar: 0, roi: 1, mantenedor: 2 };
+  const btns = document.querySelectorAll('.home-tab');
+  if (btns[btnMap[tab]]) btns[btnMap[tab]].classList.add('active');
   document.getElementById('tabCotizar').classList.toggle('active', tab === 'cotizar');
+  document.getElementById('tabRoi').classList.toggle('active', tab === 'roi');
   document.getElementById('tabMantenedor').classList.toggle('active', tab === 'mantenedor');
+  if (tab === 'roi') renderRoi();
 }
 
 function saveMantConfig() {}
@@ -2282,6 +2374,435 @@ function buildResumen() {
 
   renderComparador();
 }
+
+// ── Calculadora ROI (multi-caso) ──
+const ROI_CASES = {
+  // ═══ VENTAS ═══
+  carrito: {
+    macro: 'Ventas',
+    name: 'Recuperación de carrito',
+    tag: 'Engage',
+    note: 'Ganancia = carritos abandonados × % recuperación × ticket medio.',
+    fields: [
+      { id: 'carritos', label: 'Carritos abandonados / mes', value: 1000 },
+      { id: 'recup', label: '% de recuperación esperado', value: 10 },
+      { id: 'ticket', label: 'Ticket medio (USD)', value: 50 }
+    ],
+    gain: v => v.carritos * (v.recup / 100) * v.ticket
+  },
+  cassper: {
+    macro: 'Ventas',
+    name: 'Recuperación de venta perdida',
+    tag: 'Cassper',
+    note: 'Venta perdida recuperada de forma conversacional = ventas caídas × % recuperación × ticket medio. Success fee de Cassper (sobre lo recuperado) se descuenta como costo.',
+    fields: [
+      { id: 'perdidas', label: 'Ventas perdidas / caídas / mes', value: 800 },
+      { id: 'recup', label: '% de recuperación conversacional', value: 12 },
+      { id: 'ticket', label: 'Ticket medio (USD)', value: 55 }
+    ],
+    gain: v => v.perdidas * (v.recup / 100) * v.ticket,
+    cost: v => v.perdidas * (v.recup / 100) * v.ticket * (getMant('mantCassperFee', 5) / 100),
+    extra: v => {
+      const recuperado = v.perdidas * (v.recup / 100) * v.ticket;
+      const fee = recuperado * (getMant('mantCassperFee', 5) / 100);
+      return `Success fee Cassper (${getMant('mantCassperFee', 5)}%): $${Math.round(fee).toLocaleString('en-US')}/mes`;
+    }
+  },
+  ventas: {
+    macro: 'Ventas',
+    name: 'Ventas / conversión asistida',
+    tag: 'Engage / Studio',
+    note: 'Ganancia = conversaciones de venta × % conversión × ticket medio.',
+    fields: [
+      { id: 'convs', label: 'Conversaciones de venta / mes', value: 2000 },
+      { id: 'conv', label: '% de conversión', value: 5 },
+      { id: 'ticket', label: 'Ticket medio (USD)', value: 60 }
+    ],
+    gain: v => v.convs * (v.conv / 100) * v.ticket
+  },
+  outbound: {
+    macro: 'Ventas',
+    name: 'Campañas outbound / re-engage',
+    tag: 'Engage',
+    note: 'Ganancia = mensajes enviados × % conversión × ticket medio.',
+    fields: [
+      { id: 'mensajes', label: 'Mensajes outbound / mes', value: 10000 },
+      { id: 'conv', label: '% de conversión', value: 2 },
+      { id: 'ticket', label: 'Ticket medio (USD)', value: 40 }
+    ],
+    gain: v => v.mensajes * (v.conv / 100) * v.ticket
+  },
+  // ═══ POSTVENTA ═══
+  atencion: {
+    macro: 'Postventa',
+    name: 'Automatización de consultas',
+    tag: 'Desk / Studio',
+    note: 'Horas ahorradas = consultas × % automatizado × (min por consulta ÷ 60). Ahorro = horas ahorradas × costo hora del agente (sueldo ÷ (días hábiles × horas/día)).',
+    fields: [
+      { id: 'consultas', label: 'Consultas atendidas / mes', value: 5000 },
+      { id: 'auto', label: '% automatizado por IA', value: 60 },
+      { id: 'minutos', label: 'Tiempo promedio por consulta (min)', value: 6 },
+      { id: 'sueldo', label: 'Sueldo mensual del agente (USD)', value: 800 }
+    ],
+    gain: v => {
+      const horas = v.consultas * (v.auto / 100) * (v.minutos / 60);
+      const costoHora = v.sueldo / (getMant('mantRoiDiasHabiles', 22) * getMant('mantRoiHorasDia', 8));
+      return horas * costoHora;
+    },
+    extra: v => {
+      const horas = v.consultas * (v.auto / 100) * (v.minutos / 60);
+      const fte = horas / (getMant('mantRoiDiasHabiles', 22) * getMant('mantRoiHorasDia', 8));
+      return `${Math.round(horas).toLocaleString('es-CL')} h ahorradas/mes · ~${fte.toFixed(1)} FTE liberados`;
+    }
+  },
+  sla: {
+    macro: 'Postventa',
+    name: 'Mejora de SLA / respuesta',
+    tag: 'Desk / Studio',
+    note: 'Fuga evitada por respuestas más rápidas = interacciones × % de fuga evitada × valor por interacción.',
+    fields: [
+      { id: 'interacciones', label: 'Interacciones con SLA crítico / mes', value: 3000 },
+      { id: 'fuga', label: '% de fuga evitada (respuesta rápida)', value: 5 },
+      { id: 'valor', label: 'Valor por interacción salvada (USD)', value: 30 }
+    ],
+    gain: v => v.interacciones * (v.fuga / 100) * v.valor
+  },
+  retencion: {
+    macro: 'Postventa',
+    name: 'Retención / anti-churn',
+    tag: 'Desk / Engage',
+    note: 'Clientes salvados de cancelar = clientes en riesgo × % retenidos por atención IA. Ganancia = clientes salvados × valor de vida (LTV).',
+    fields: [
+      { id: 'riesgo', label: 'Clientes en riesgo de fuga / mes', value: 200 },
+      { id: 'retenidos', label: '% retenidos por atención IA', value: 20 },
+      { id: 'ltv', label: 'Valor de vida del cliente / LTV (USD)', value: 300 }
+    ],
+    gain: v => v.riesgo * (v.retenidos / 100) * v.ltv,
+    extra: v => `${Math.round(v.riesgo * (v.retenidos / 100))} cliente(s) salvado(s)/mes`
+  },
+  escalamiento: {
+    macro: 'Postventa',
+    name: 'Ahorro de escalamiento (FTE)',
+    tag: 'Desk / Studio',
+    note: 'Al crecer el volumen sin sumar personas: ahorro = agentes que no se contratan × sueldo mensual del agente.',
+    fields: [
+      { id: 'agentes', label: 'Agentes que NO se contratan', value: 3 },
+      { id: 'sueldo', label: 'Sueldo mensual del agente (USD)', value: 800 }
+    ],
+    gain: v => v.agentes * v.sueldo,
+    extra: v => `${v.agentes} contratación(es) evitada(s)`
+  },
+  cobranza: {
+    macro: 'Postventa',
+    name: 'Recuperación de cobranza',
+    tag: 'Studio / Desk',
+    note: 'Ganancia = monto en mora gestionado × % recuperación.',
+    fields: [
+      { id: 'mora', label: 'Monto en mora gestionado / mes (USD)', value: 50000 },
+      { id: 'recup', label: '% de recuperación', value: 15 }
+    ],
+    gain: v => v.mora * (v.recup / 100)
+  }
+};
+let roiInputValues = {};
+let roiActiveCases = new Set();
+let roiCostTouched = false;
+
+function roiVals(caseKey) {
+  const cfg = ROI_CASES[caseKey];
+  const stored = roiInputValues[caseKey] || {};
+  const vals = {};
+  cfg.fields.forEach(f => { vals[f.id] = stored[f.id] !== undefined ? stored[f.id] : f.value; });
+  return vals;
+}
+
+function roiUseCotizacion() {
+  const costEl = document.getElementById('roiCost');
+  if (costEl) { costEl.value = Math.round(lastTotalMonthly || 0); roiCostTouched = false; calcRoi(); }
+}
+
+function toggleRoiCase(caseKey) {
+  if (roiActiveCases.has(caseKey)) roiActiveCases.delete(caseKey);
+  else roiActiveCases.add(caseKey);
+  renderRoi();
+}
+
+function renderRoi() {
+  const casesEl = document.getElementById('roiCases');
+  if (!casesEl) return;
+  const fmtUSD = n => '$' + Math.round(n).toLocaleString('en-US');
+
+  let html = '';
+  let lastMacro = null;
+  Object.keys(ROI_CASES).forEach(caseKey => {
+    const cfg = ROI_CASES[caseKey];
+    if (cfg.macro !== lastMacro) {
+      lastMacro = cfg.macro;
+      html += `<div class="roi-macro-header">${cfg.macro}</div>`;
+    }
+    const active = roiActiveCases.has(caseKey);
+    const vals = roiVals(caseKey);
+    const gain = active ? cfg.gain(vals) : 0;
+    const fieldsHtml = cfg.fields.map(f => `
+      <div class="roi-input-group">
+        <label class="roi-input-label" for="roi_${caseKey}_${f.id}">${f.label}</label>
+        <input class="roi-input-field" type="text" id="roi_${caseKey}_${f.id}" value="${vals[f.id]}" oninput="calcRoi()">
+      </div>`).join('');
+    html += `
+      <div class="roi-case-card ${active ? 'active' : ''}">
+        <div class="roi-case-head">
+          <label class="roi-case-titlewrap">
+            <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleRoiCase('${caseKey}')">
+            <span><span class="roi-case-name">${cfg.name}</span><br><span class="roi-case-tag">${cfg.tag}</span></span>
+          </label>
+          <span class="roi-case-gain" id="roiGainBadge_${caseKey}">${active ? fmtUSD(gain) + '/mes' : ''}</span>
+        </div>
+        <div class="roi-case-body ${active ? '' : 'hidden'}">
+          ${fieldsHtml}
+          ${cfg.extra ? `<div class="roi-case-note" id="roiExtra_${caseKey}" style="color:var(--accent-green); font-style:normal; font-weight:600;">${active ? cfg.extra(vals) : ''}</div>` : ''}
+          <div class="roi-case-note">${cfg.note}</div>
+        </div>
+      </div>`;
+  });
+  casesEl.innerHTML = html;
+
+  const costEl = document.getElementById('roiCost');
+  if (costEl && !roiCostTouched) costEl.value = Math.round(lastTotalMonthly || 0);
+  calcRoi();
+}
+
+function roiParse(str) { return parseFloat(String(str).replace(/\./g, '').replace(/,/g, '.')) || 0; }
+
+function recalcRoiIfOpen() {
+  const tab = document.getElementById('tabRoi');
+  if (tab && tab.classList.contains('active')) calcRoi();
+}
+
+function calcRoi() {
+  const fmtUSDbadge = n => '$' + Math.round(n).toLocaleString('en-US');
+  let totalGain = 0;
+  let extraCost = 0;
+  roiActiveCases.forEach(caseKey => {
+    const cfg = ROI_CASES[caseKey];
+    const vals = {};
+    cfg.fields.forEach(f => {
+      const el = document.getElementById('roi_' + caseKey + '_' + f.id);
+      vals[f.id] = el ? roiParse(el.value) : f.value;
+    });
+    roiInputValues[caseKey] = vals;
+    const g = cfg.gain(vals);
+    totalGain += g;
+    if (cfg.cost) extraCost += cfg.cost(vals);
+    const badge = document.getElementById('roiGainBadge_' + caseKey);
+    if (badge) badge.textContent = fmtUSDbadge(g) + '/mes';
+    if (cfg.extra) {
+      const extraEl = document.getElementById('roiExtra_' + caseKey);
+      if (extraEl) extraEl.textContent = cfg.extra(vals);
+    }
+  });
+
+  const costEl = document.getElementById('roiCost');
+  if (costEl && document.activeElement === costEl) roiCostTouched = true;
+  const baseCost = costEl ? roiParse(costEl.value) : (lastTotalMonthly || 0);
+  const cost = baseCost + extraCost;
+
+  const net = totalGain - cost;
+  const roi = cost > 0 ? (net / cost) * 100 : 0;
+
+  const fmtUSD = n => '$' + Math.round(n).toLocaleString('en-US');
+  document.getElementById('roiGain').textContent = fmtUSD(totalGain);
+
+  const netEl = document.getElementById('roiNet');
+  netEl.textContent = fmtUSD(net);
+  netEl.classList.toggle('negative', net < 0);
+
+  const roiEl = document.getElementById('roiValue');
+  roiEl.textContent = roi.toLocaleString('es-CL', { maximumFractionDigits: 0 }) + '%';
+  roiEl.classList.toggle('negative', roi < 0);
+
+  const feeLine = document.getElementById('roiFeeLine');
+  if (feeLine) {
+    if (extraCost > 0) {
+      feeLine.style.display = '';
+      feeLine.innerHTML = `Costo base Adereso: <strong>$${Math.round(baseCost).toLocaleString('en-US')}</strong> + Success fee variable (Cassper): <strong style="color:var(--accent-orange);">$${Math.round(extraCost).toLocaleString('en-US')}</strong> = Costo total: <strong>$${Math.round(cost).toLocaleString('en-US')}/mes</strong>`;
+    } else {
+      feeLine.style.display = 'none';
+    }
+  }
+
+  const noteEl = document.getElementById('roiNote');
+  if (noteEl) {
+    noteEl.textContent = roiActiveCases.size === 0
+      ? 'Activa al menos un caso de uso para construir el business case.'
+      : `${roiActiveCases.size} caso(s) de uso activo(s) · ganancia combinada vs. costo mensual.`;
+  }
+}
+
+function copyRoi() {
+  const fmtUSD = n => '$' + Math.round(n).toLocaleString('en-US');
+  const costEl = document.getElementById('roiCost');
+  const baseCost = costEl ? roiParse(costEl.value) : (lastTotalMonthly || 0);
+  let totalGain = 0;
+  let extraCost = 0;
+  let text = '=== CASO DE NEGOCIO — ROI ADERESO ===\n' + new Date().toLocaleDateString('es-CL') + '\n\n';
+  if (roiActiveCases.size === 0) { text += 'Sin casos de uso activos.\n'; }
+  else {
+    text += 'FUENTES DE VALOR:\n';
+    roiActiveCases.forEach(caseKey => {
+      const cfg = ROI_CASES[caseKey];
+      const vals = roiVals(caseKey);
+      const g = cfg.gain(vals);
+      totalGain += g;
+      if (cfg.cost) extraCost += cfg.cost(vals);
+      text += `  • ${cfg.name} (${cfg.tag}): ${fmtUSD(g)}/mes\n`;
+      if (cfg.extra) text += `      ${cfg.extra(vals)}\n`;
+    });
+  }
+  const cost = baseCost + extraCost;
+  const net = totalGain - cost;
+  const roi = cost > 0 ? (net / cost) * 100 : 0;
+  text += '\nCONSOLIDADO:\n';
+  text += `  Ganancia total/mes: ${fmtUSD(totalGain)}\n`;
+  text += `  Costo Adereso/mes: ${fmtUSD(baseCost)}\n`;
+  if (extraCost > 0) text += `  Success fee variable/mes: ${fmtUSD(extraCost)}\n`;
+  text += `  Costo total/mes: ${fmtUSD(cost)}\n`;
+  text += `  Ganancia neta/mes: ${fmtUSD(net)}\n`;
+  text += `  ROI mensual: ${roi.toLocaleString('es-CL', { maximumFractionDigits: 0 })}%\n`;
+  navigator.clipboard.writeText(text).then(() => {
+    const fb = document.getElementById('roiCopyFeedback');
+    if (fb) { fb.textContent = '✓ Copiado'; setTimeout(() => { fb.textContent = ''; }, 2000); }
+  });
+}
+
+function downloadRoi() {
+  if (roiActiveCases.size === 0) {
+    const fb = document.getElementById('roiCopyFeedback');
+    if (fb) { fb.textContent = 'Activa al menos un caso'; setTimeout(() => { fb.textContent = ''; }, 2500); }
+    return;
+  }
+  const fmtUSD = n => '$' + Math.round(n).toLocaleString('en-US');
+  const costEl = document.getElementById('roiCost');
+  const baseCost = costEl ? roiParse(costEl.value) : (lastTotalMonthly || 0);
+  let totalGain = 0, extraCost = 0;
+  const rows = [];
+  let curMacro = null;
+  Object.keys(ROI_CASES).forEach(caseKey => {
+    if (!roiActiveCases.has(caseKey)) return;
+    const cfg = ROI_CASES[caseKey];
+    const vals = roiVals(caseKey);
+    const g = cfg.gain(vals);
+    totalGain += g;
+    if (cfg.cost) extraCost += cfg.cost(vals);
+    rows.push({ macro: cfg.macro, name: cfg.name, tag: cfg.tag, gain: g, extra: cfg.extra ? cfg.extra(vals) : '' });
+  });
+  const cost = baseCost + extraCost;
+  const net = totalGain - cost;
+  const roi = cost > 0 ? (net / cost) * 100 : 0;
+  const roiAnual = roi;
+  const gananciaAnual = net * 12;
+
+  let rowsHtml = '';
+  curMacro = null;
+  rows.forEach(r => {
+    if (r.macro !== curMacro) {
+      curMacro = r.macro;
+      rowsHtml += `<tr class="macro-row"><td colspan="2">${r.macro}</td></tr>`;
+    }
+    rowsHtml += `<tr>
+      <td><span class="case-name">${r.name}</span><span class="case-tag">${r.tag}</span>${r.extra ? `<div class="case-extra">${r.extra}</div>` : ''}</td>
+      <td class="num">${fmtUSD(r.gain)}<span class="permes">/mes</span></td>
+    </tr>`;
+  });
+
+  const fecha = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caso de Negocio — Adereso</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Work+Sans:wght@400;600;700&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Work Sans',sans-serif; background:#0A0A1A; color:#fff; padding:48px 40px; max-width:900px; margin:0 auto; }
+.header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #555; padding-bottom:20px; margin-bottom:32px; }
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-mark { width:32px; height:32px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; color:#0A0A1A; font-weight:800; font-size:16px; }
+.logo-name { font-family:'Outfit'; font-weight:700; font-size:20px; letter-spacing:-0.5px; }
+.doc-meta { text-align:right; color:#A0A0A0; font-size:13px; }
+h1 { font-family:'Outfit'; font-weight:800; font-size:34px; line-height:1.15; margin-bottom:8px; letter-spacing:-1px; }
+h1 .hl { color:#F5D832; }
+.sub { color:#A0A0A0; font-size:14px; margin-bottom:36px; }
+.hero { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:36px; }
+.hero-card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:22px; }
+.hero-card.win { border-color:#F5D832; background:rgba(245,216,50,0.06); }
+.hero-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#A0A0A0; margin-bottom:8px; }
+.hero-value { font-family:'Outfit'; font-weight:800; font-size:30px; letter-spacing:-1px; }
+.hero-value.yellow { color:#F5D832; }
+.hero-value.green { color:#22c55e; }
+.section-title { font-family:'Outfit'; font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:1px; color:#F5D832; margin-bottom:14px; }
+table { width:100%; border-collapse:collapse; margin-bottom:32px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden; }
+td { padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:14px; vertical-align:middle; }
+tr:last-child td { border-bottom:none; }
+td.num { text-align:right; font-weight:700; color:#22c55e; white-space:nowrap; }
+.permes { color:#A0A0A0; font-weight:400; font-size:12px; }
+.macro-row td { background:rgba(245,216,50,0.08); font-family:'Outfit'; font-weight:700; text-transform:uppercase; letter-spacing:1px; font-size:12px; color:#F5D832; padding:8px 18px; }
+.case-name { font-weight:600; }
+.case-tag { color:#A0A0A0; font-size:12px; margin-left:8px; }
+.case-extra { color:#22c55e; font-size:12px; margin-top:4px; }
+.totals { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:22px; margin-bottom:20px; }
+.total-line { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; color:#A0A0A0; }
+.total-line strong { color:#fff; }
+.total-line.fee strong { color:#f59e0b; }
+.total-line.big { border-top:1px solid #555; margin-top:8px; padding-top:14px; font-size:16px; }
+.total-line.big strong { font-family:'Outfit'; font-weight:800; font-size:20px; }
+.total-line.big.green strong { color:#22c55e; }
+.footer { text-align:center; color:#A0A0A0; font-size:12px; margin-top:40px; border-top:1px solid #555; padding-top:20px; }
+.footer .tagline { font-style:italic; margin-top:4px; }
+@media print { body { padding:20px; -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style></head>
+<body>
+  <div class="header">
+    <div class="logo"><div class="logo-mark">a</div><div class="logo-name">adereso</div></div>
+    <div class="doc-meta">Caso de Negocio<br>${fecha}</div>
+  </div>
+  <h1><span class="hl">Retorno</span> de tu inversión con Adereso</h1>
+  <div class="sub">Proyección mensual del impacto económico según los casos de uso activados.</div>
+
+  <div class="hero">
+    <div class="hero-card"><div class="hero-label">Ganancia total / mes</div><div class="hero-value">${fmtUSD(totalGain)}</div></div>
+    <div class="hero-card win"><div class="hero-label">ROI mensual</div><div class="hero-value yellow">${roi.toLocaleString('es-CL',{maximumFractionDigits:0})}%</div></div>
+    <div class="hero-card"><div class="hero-label">Ganancia neta / mes</div><div class="hero-value green">${fmtUSD(net)}</div></div>
+  </div>
+
+  <div class="section-title">Fuentes de valor</div>
+  <table><tbody>${rowsHtml}</tbody></table>
+
+  <div class="section-title">Resumen financiero</div>
+  <div class="totals">
+    <div class="total-line">Ganancia total / mes <strong>${fmtUSD(totalGain)}</strong></div>
+    <div class="total-line">Costo Adereso / mes <strong>${fmtUSD(baseCost)}</strong></div>
+    ${extraCost > 0 ? `<div class="total-line fee">Success fee variable (Cassper) <strong>${fmtUSD(extraCost)}</strong></div>` : ''}
+    <div class="total-line">Costo total / mes <strong>${fmtUSD(cost)}</strong></div>
+    <div class="total-line big green">Ganancia neta / mes <strong>${fmtUSD(net)}</strong></div>
+    <div class="total-line big">Proyección neta anual <strong>${fmtUSD(gananciaAnual)}</strong></div>
+  </div>
+
+  <div class="footer">adereso · Todos somos clientes<div class="tagline">Documento generado con el cotizador Adereso · ${fecha}</div></div>
+
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) {
+    const a = document.createElement('a');
+    a.href = url; a.download = 'caso-negocio-adereso.html'; a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const fb = document.getElementById('roiCopyFeedback');
+  if (fb) { fb.textContent = '✓ Generado — usa "Guardar como PDF"'; setTimeout(() => { fb.textContent = ''; }, 4000); }
+}
+
 
 function getResumenText() {
   let text = '=== COTIZACIÓN ADERESO ===\n';
